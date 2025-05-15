@@ -3,7 +3,7 @@ CC      := gcc
 AR      := ar rcs
 CFLAGS  := -Wall -Wextra -std=c99 -D_XOPEN_SOURCE=700
 lib := libuthread.a
-SRCS    := queue.c uthread.c
+SRCS    := queue.c uthread.c preempt.c sem.c
 OBJS    := $(SRCS:.c=.o)
 
 .PHONY: all clean

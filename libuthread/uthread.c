@@ -35,6 +35,7 @@ static void uthread_stub(void) {
 struct uthread_tcb *uthread_current(void)
 {
 	/* TODO Phase 2/3 */
+    return current_thread;
 }
 
 void uthread_yield(void)
@@ -44,7 +45,9 @@ void uthread_yield(void)
         return;
 
     // Put this thread at end of ready queue
+    preempt_disable();
     queue_enqueue(ready_queue, current_thread);
+    preempt_enable();
     // Switch to scheduler
     swapcontext(&current_thread->context,
                 &scheduler_context);
@@ -56,13 +59,17 @@ void uthread_exit(void)
 	free(current_thread->stack);
     free(current_thread);
 
+    preempt_disable();
+
     // Pick next thread to run
     struct uthread_tcb *next;
     if (queue_dequeue(ready_queue, (void**)&next) == 0) {
         current_thread = next;
+        preempt_enable();
         setcontext(&next->context);
     } else {
         // No threads left: return to scheduler
+        preempt_enable();
         setcontext(&scheduler_context);
     }
 }
@@ -116,7 +123,7 @@ int uthread_create(uthread_func_t func, void *arg)
 int uthread_run(bool preempt, uthread_func_t func, void *arg)
 {
 	/* TODO Phase 2 */
-	(void)preempt;  // preemption not implemented in Phase 2
+	preempt_start(preempt);
 
     // 1) Initialize ready queue
     ready_queue = queue_create();
@@ -143,16 +150,37 @@ int uthread_run(bool preempt, uthread_func_t func, void *arg)
 
     // 5) All threads finished
     queue_destroy(ready_queue);
+    
+    preempt_stop();
+
     return 0;
 }
 
 void uthread_block(void)
 {
 	/* TODO Phase 3 */
+    preempt_disable();
+
+    struct uthread_tcb *next;
+    struct uthread_tcb *prev = current_thread;
+
+    if (queue_dequeue(ready_queue, (void**)&next) == 0) {
+        current_thread = next;
+        preempt_enable();
+        swapcontext(&prev->context, &next->context);
+    } else {
+        preempt_enable();
+        setcontext(&scheduler_context);
+    }
 }
 
 void uthread_unblock(struct uthread_tcb *uthread)
 {
 	/* TODO Phase 3 */
+    if (!uthread) return;
+
+    preempt_disable();  
+    queue_enqueue(ready_queue, uthread);
+    preempt_enable(); 
 }
 

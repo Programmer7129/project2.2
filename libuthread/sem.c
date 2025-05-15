@@ -1,31 +1,82 @@
 #include <stddef.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #include "queue.h"
 #include "private.h"
 #include "sem.h"
 
 struct semaphore {
-	/* TODO Phase 3 */
+	size_t count;
+    queue_t wait_queue;
 };
 
 sem_t sem_create(size_t count)
 {
-	/* TODO Phase 3 */
+	sem_t sem = malloc(sizeof(struct semaphore));
+    if (!sem) return NULL;
+
+    sem->count = count;
+    sem->wait_queue = queue_create();
+    if (!sem->wait_queue) {
+        free(sem);
+        return NULL;
+    }
+
+    return sem;
 }
 
 int sem_destroy(sem_t sem)
 {
-	/* TODO Phase 3 */
+	if (!sem || queue_length(sem->wait_queue) != 0) return -1;
+
+    queue_destroy(sem->wait_queue);
+    free(sem);
+
+    return 0;
 }
 
 int sem_down(sem_t sem)
 {
-	/* TODO Phase 3 */
+	if (!sem) return -1;
+
+    preempt_disable();
+
+    while (sem->count == 0) {
+        struct uthread_tcb *curr = uthread_current();
+        queue_enqueue(sem->wait_queue, curr);
+
+        preempt_enable();
+        uthread_block();
+        preempt_disable();
+    }
+
+    sem->count--;
+
+    preempt_enable();
+    
+    return 0;
 }
 
 int sem_up(sem_t sem)
 {
-	/* TODO Phase 3 */
+	if (!sem)
+        return -1;
+
+    preempt_disable();
+
+    struct uthread_tcb *next;
+    if (queue_dequeue(sem->wait_queue, (void**)&next) == 0) {
+        sem->count++;
+        uthread_unblock(next);
+    } else {
+        sem->count++;
+    }
+
+    preempt_enable();
+
+    uthread_yield();
+
+    return 0;
 }
 
