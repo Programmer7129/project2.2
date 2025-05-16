@@ -60,22 +60,23 @@ int sem_down(sem_t sem)
 
 int sem_up(sem_t sem)
 {
-	if (!sem)
-        return -1;
+	if (!sem) return -1;
 
     preempt_disable();
 
     struct uthread_tcb *next;
+    int unblocked = 0;
     if (queue_dequeue(sem->wait_queue, (void**)&next) == 0) {
         sem->count++;
         uthread_unblock(next);
+        unblocked = 1;
     } else {
         sem->count++;
     }
 
     preempt_enable();
 
-    uthread_yield();
+    if (unblocked) uthread_yield();
 
     return 0;
 }
