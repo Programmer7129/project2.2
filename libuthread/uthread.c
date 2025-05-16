@@ -20,14 +20,12 @@ struct uthread_tcb {
     void      *arg; 
 };
 
-static queue_t ready_queue = NULL;             // FIFO of ready threads
+static queue_t ready_queue = NULL;
 static struct uthread_tcb *current_thread = NULL;
 static ucontext_t scheduler_context;
 
 static void uthread_stub(void) {
-    // Run the user function
     current_thread->func(current_thread->arg);
-    // When it returns, exit the thread
     uthread_exit();
 }
 
@@ -44,13 +42,10 @@ void uthread_yield(void)
 	if (!current_thread)
         return;
 
-    // Put this thread at end of ready queue
     preempt_disable();
     queue_enqueue(ready_queue, current_thread);
     preempt_enable();
-    // Switch to scheduler
-    swapcontext(&current_thread->context,
-                &scheduler_context);
+    swapcontext(&current_thread->context, &scheduler_context);
 }
 
 void uthread_exit(void)
@@ -61,14 +56,12 @@ void uthread_exit(void)
 
     preempt_disable();
 
-    // Pick next thread to run
     struct uthread_tcb *next;
     if (queue_dequeue(ready_queue, (void**)&next) == 0) {
         current_thread = next;
         preempt_enable();
         setcontext(&next->context);
     } else {
-        // No threads left: return to scheduler
         preempt_enable();
         setcontext(&scheduler_context);
     }
@@ -80,37 +73,30 @@ int uthread_create(uthread_func_t func, void *arg)
 	if (!func)
         return -1;
 
-    // Allocate TCB
     struct uthread_tcb *tcb = malloc(sizeof *tcb);
     if (!tcb)
         return -1;
 
-    // Initialize context
     if (getcontext(&tcb->context) == -1) {
         free(tcb);
         return -1;
     }
 
-    // Allocate stack
     tcb->stack = malloc(UTHREAD_STACK_SIZE);
     if (!tcb->stack) {
         free(tcb);
         return -1;
     }
 
-    // Set up context to use the new stack and scheduler as link
     tcb->context.uc_stack.ss_sp   = tcb->stack;
     tcb->context.uc_stack.ss_size = UTHREAD_STACK_SIZE;
     tcb->context.uc_link          = &scheduler_context;
 
-    // Save function and argument
     tcb->func = func;
     tcb->arg  = arg;
 
-    // Arrange for stub to run first
     makecontext(&tcb->context, uthread_stub, 0);
 
-    // Enqueue into ready queue
     if (queue_enqueue(ready_queue, tcb) == -1) {
         free(tcb->stack);
         free(tcb);
@@ -125,30 +111,25 @@ int uthread_run(bool preempt, uthread_func_t func, void *arg)
 	/* TODO Phase 2 */
 	preempt_start(preempt);
 
-    // 1) Initialize ready queue
     ready_queue = queue_create();
     if (!ready_queue)
         return -1;
 
-    // 2) Save scheduler context (so we can return here)
     if (getcontext(&scheduler_context) == -1) {
         queue_destroy(ready_queue);
         return -1;
     }
 
-    // 3) Create the initial thread
     if (uthread_create(func, arg) == -1) {
         queue_destroy(ready_queue);
         return -1;
     }
 
-    // 4) Scheduling loop: dequeue and run threads
     while (queue_dequeue(ready_queue, (void**)&current_thread) == 0) {
         swapcontext(&scheduler_context,
                     &current_thread->context);
     }
 
-    // 5) All threads finished
     queue_destroy(ready_queue);
     
     preempt_stop();
